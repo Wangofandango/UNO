@@ -1,50 +1,66 @@
-import { Shuffler } from "../utils/random_utils"
+import { Shuffler } from "../utils/random_utils";
 
 export type Deck = {
-    size: number
-    cards: Card[]
+  size: number
+  cards: Card[]
 
-    shuffle: (shuffler: Shuffler<Card>) => void
-    deal: () => Card | undefined
-}
+  shuffle: (shuffler: Shuffler<Card>) => void
+  deal: () => Card | undefined
+  filter: (predicate: (card: Card) => boolean) => Deck
+};
 
-const CARD_TYPES = ['NUMBER', 'SKIP', 'REVERSE', 'DRAW', 'WILD', 'WILD DRAW'] as const
-export type CardType = typeof CARD_TYPES[number]
+export const types = [
+  "NUMBERED",
+  "SKIP",
+  "REVERSE",
+  "DRAW",
+  "WILD",
+  "WILD DRAW",
+] as const;
+export type CardType = (typeof types)[number];
 
-const CARD_COLORS = ['RED', 'YELLOW', 'GREEN', 'BLUE', 'BLACK'] as const
-export type CardColor = typeof CARD_COLORS[number]
+export const colors = ["RED", "YELLOW", "GREEN", "BLUE"] as const;
+export type CardColor = (typeof colors)[number];
 
 export type Card = {
-
-    type: CardType
-    color: CardColor
-    number?: number
-}
+  type: CardType;
+  color?: CardColor;
+  number?: number;
+};
 
 export function createInitialDeck(): Deck {
-    let cards: Card[] = []
-    for(let color of CARD_COLORS) {
-        cards.push({type: 'NUMBER', color, number: 0})
-        for(let number = 1; number < 10; number++) {
-            cards.push({type: 'NUMBER', color, number})
-            cards.push({type: 'NUMBER', color, number})
-        }
-        for(let type of ['SKIP', 'REVERSE', 'DRAW'] as const) {
-            cards.push({type, color})
-            cards.push({type, color})
-        }
+  let cards: Card[] = [];
+  for (let color of colors) {
+    cards.push({ type: "NUMBERED", color, number: 0 });
+    for (let number = 1; number < 10; number++) {
+      cards.push({ type: "NUMBERED", color, number });
+      cards.push({ type: "NUMBERED", color, number });
     }
-    for(let type of ['WILD', 'WILD DRAW'] as const) {
-        for(let _ of [1, 2, 3, 4]) {
-            cards.push({type, color: 'BLACK'})
-        }
+    for (let type of ["SKIP", "REVERSE", "DRAW"] as const) {
+      cards.push({ type, color });
+      cards.push({ type, color });
     }
-    return {
-        size: cards.length,
-        cards,
-        shuffle: (shuffler: Shuffler<Card>) => shuffler(cards),
-        deal: () => cards.pop()
+  }
+  for (let type of ["WILD", "WILD DRAW"] as const) {
+    for (let _ of [1, 2, 3, 4]) {
+      cards.push({ type });
     }
+  }
+  return createDeck(cards);
 }
 
-
+export function createDeck(cards: Card[]): Deck {
+  return {
+    get size() {
+      return cards.length;
+    },
+    cards,
+    shuffle: (shuffler: Shuffler<Card>) => shuffler(cards),
+    deal: () => {
+      return cards.shift();
+    },
+    filter: (predicate: (card: Card) => boolean) => {
+      return createDeck(cards.filter(predicate));
+    },
+  };
+}
