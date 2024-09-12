@@ -1,12 +1,12 @@
 import { Shuffler } from "../utils/random_utils";
 
 export type Deck = {
-  size: number
-  cards: Card[]
+  size: number;
+  cards: Card[];
 
-  shuffle: (shuffler: Shuffler<Card>) => void
-  deal: () => Card | undefined
-  filter: (predicate: (card: Card) => boolean) => Deck
+  shuffle: (shuffler: Shuffler<Card>) => void;
+  deal: () => Card | undefined;
+  filter: (predicate: (card: Card) => boolean) => Deck;
 };
 
 export const types = [
@@ -17,14 +17,14 @@ export const types = [
   "WILD",
   "WILD DRAW",
 ] as const;
-export type CardType = (typeof types)[number];
+export type Type = (typeof types)[number];
 
 export const colors = ["RED", "YELLOW", "GREEN", "BLUE"] as const;
-export type CardColor = (typeof colors)[number];
+export type Color = (typeof colors)[number];
 
 export type Card = {
-  type: CardType;
-  color?: CardColor;
+  type: Type;
+  color?: Color;
   number?: number;
 };
 

@@ -65,6 +65,7 @@ export type ShuffleBuilder = {
   discard(): ShuffleBuilder
   drawPile(): ShuffleBuilder
   hand(player: number): ShuffleBuilder
+  top(): ShuffleBuilder
   repeat(n: number): ShuffleBuilder
   is(...spec: CardSpec[]): ShuffleBuilder
   isnt(...spec: CardSpec[]): ShuffleBuilder
@@ -102,6 +103,11 @@ export function shuffleBuilder(
     },
     hand(player: number) {
       currentIndex = player * cardsInHand
+      repetition = 1
+      return builder
+    },
+    top() {
+      currentIndex = 0
       repetition = 1
       return builder
     },
