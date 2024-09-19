@@ -1,5 +1,5 @@
 import { Shuffler } from "../utils/random_utils";
-import { Card, Color, createInitialDeck, Deck } from "./deck";
+import { Card, Color, createDeck, createInitialDeck, Deck } from "./deck";
 
 export type Hand = {
   playerCount: number;
@@ -15,11 +15,19 @@ export type Hand = {
   discardPile: () => DiscardPile;
   drawPile: () => Deck;
   play: (index: number, color?: Color) => void;
-  // throws if outofbounds or WILD without color
-  playerInTurn: () => number;
+  playerInTurn: () => number | undefined;
   canPlay: (playerIndex: number) => boolean;
   canPlayAny: () => boolean;
   draw: () => void;
+
+  catchUnoFailure: (params: { accuser: number; accused: number }) => boolean;
+  sayUno: (playerIndex: number) => void;
+
+  hasEnded: () => boolean;
+  winner: () => number | undefined;
+  score: () => number | undefined;
+
+  onEnd: (callback: (params: { winner: number }) => void) => void;
 };
 
 export type DiscardPile = {
@@ -60,15 +68,32 @@ export function createHand(params: HandParams): Hand {
   }
 
   const playerHands: Card[][] = [];
+  const unoCalls: boolean[] = new Array(params.players.length).fill(false);
+  const onEndCallbacks: Parameters<Hand["onEnd"]>[0][] = [];
 
-  const deck = createInitialDeck();
+  let deck = createInitialDeck();
   deck.shuffle(params.shuffler);
+
+  const drawCards = (playerIndex: number, amount: number) => {
+    for (let i = 0; i < amount; i++) {
+      const playerHand = playerHands[playerIndex];
+      const newCard = deck.deal();
+      playerHand.push(newCard as Card);
+
+      if (deck.size === 0) {
+        deck = createDeck(discardedPile.cards.slice(0, -1));
+        deck.shuffle(params.shuffler);
+
+        discardedPile.cards = [discardedPile.top()];
+      }
+    }
+  };
 
   // Deal cards to players
   for (let i = 0; i < params.players.length; i++) {
     playerHands.push([]);
     for (let j = 0; j < (params?.cardsPerPlayer ?? 7); j++) {
-      playerHands[i].push(deck.deal() as Card);
+      drawCards(i, 1);
     }
   }
 
@@ -93,22 +118,21 @@ export function createHand(params: HandParams): Hand {
   currentPlayer = currentPlayer < 0 ? params.players.length - 1 : currentPlayer;
 
   if (discardedPile.top().type === "DRAW") {
-    playerHands[currentPlayer].push(deck.deal() as Card);
-    playerHands[currentPlayer].push(deck.deal() as Card);
+    drawCards(currentPlayer, 2);
     currentPlayer = (currentPlayer + 1) % params.players.length;
   }
 
-  const drawCard = () => {
-    const playerHand = playerHands[currentPlayer];
-    const newCard = deck.deal();
-    playerHand.push(newCard as Card);
+  const hasEnded = () => {
+    return playerHands.some((hand) => hand.length === 0);
   };
 
   const canPlay = (cardIndex: number) => {
+    if (hasEnded()) return false;
+
     const playerHand = playerHands[currentPlayer];
 
     const card = playerHand[cardIndex];
-    if (!card) return;
+    if (!card) return false;
 
     const topCard = discardedPile.top();
 
@@ -139,22 +163,28 @@ export function createHand(params: HandParams): Hand {
       if (playerIndex < 0 || playerIndex >= params.players.length) {
         throw new Error("Player index out of bounds");
       }
-      console.log("play hand at index", playerIndex, playerHands[playerIndex]);
       return playerHands[playerIndex];
     },
     discardPile: () => discardedPile,
-    drawPile: () => {
-      console.log(deck.cards);
-      return deck;
+    drawPile: () => deck,
+    playerInTurn: () => {
+      if (hasEnded()) return;
+      return currentPlayer;
     },
-    playerInTurn: () => currentPlayer,
     canPlay,
     canPlayAny: () => canPlay(currentPlayer),
-    draw: drawCard,
-    // TODO: do it
+    draw: () => {
+      if (hasEnded()) {
+        throw new Error("Game has ended");
+      }
+      drawCards(currentPlayer, 1);
+    },
     play: (cardIndex: number, color?: Color) => {
+      if (hasEnded()) {
+        throw new Error("Game has ended");
+      }
+
       const playerHand = playerHands[currentPlayer];
-      const topCard = discardedPile.top();
       const card = playerHand[cardIndex];
 
       if (!card) {
@@ -164,8 +194,6 @@ export function createHand(params: HandParams): Hand {
       if (!canPlay(cardIndex)) {
         return;
       }
-
-      console.log("PLAYED CARD: ", card);
 
       playerHand.splice(cardIndex, 1);
       discardedPile.cards.unshift(card);
@@ -184,27 +212,83 @@ export function createHand(params: HandParams): Hand {
         currentPlayer = (currentPlayer + 1) % params.players.length;
       } else if (card.type === "DRAW") {
         const nextPlayer = (currentPlayer + 1) % params.players.length;
-        playerHands[nextPlayer].push(deck.deal() as Card);
-        playerHands[nextPlayer].push(deck.deal() as Card);
+        drawCards(nextPlayer, 2);
       } else if (card.type === "WILD DRAW") {
         const nextPlayer = (currentPlayer + 1) % params.players.length;
-        playerHands[nextPlayer].push(deck.deal() as Card);
-        playerHands[nextPlayer].push(deck.deal() as Card);
-        playerHands[nextPlayer].push(deck.deal() as Card);
-        playerHands[nextPlayer].push(deck.deal() as Card);
+        drawCards(nextPlayer, 4);
+      }
+
+      if (playerHand.length === 0) {
+        onEndCallbacks.forEach((callback) => {
+          callback({ winner: currentPlayer });
+        });
+        return;
       }
 
       currentPlayer = (currentPlayer + 1) % params.players.length;
 
-      if (playerHand.length === 0) {
-        throw new Error("Player has won");
-      }
-
       if (!canPlayAny()) {
-        drawCard();
+        drawCards(currentPlayer, 1);
       }
 
       return;
+    },
+    sayUno: (playerIndex: number) => {
+      if (hasEnded()) {
+        throw new Error("Game has ended");
+      }
+
+      if (playerIndex < 0 || playerIndex >= params.players.length) {
+        throw new Error("Player index out of bounds");
+      }
+
+      const playerCardCount = playerHands[playerIndex].length;
+
+      if (playerCardCount === 1) {
+        unoCalls[playerIndex] = true;
+      }
+    },
+    catchUnoFailure: ({ accuser, accused }) => {
+      console.log(
+        `Player ${accuser + 1} accuses Player ${accused + 1} of not saying UNO!`
+      );
+
+      const isUnoFailure =
+        (!unoCalls[accused] && playerHands[accused].length <= 1) ||
+        (unoCalls[accused] && playerHands[accused].length > 1);
+
+      if (isUnoFailure) {
+        drawCards(accused, 4);
+      }
+
+      return isUnoFailure;
+    },
+    hasEnded,
+    winner: () => {
+      const winnerIndex = playerHands.findIndex((hand) => hand.length === 0);
+      if (winnerIndex === -1) return;
+      return winnerIndex;
+    },
+    score: () => {
+      if (!hasEnded()) return;
+
+      return playerHands.reduce((acc, hand) => {
+        const playerHandScore = hand.reduce((acc, card) => {
+          let cardScore = 0;
+          if (card.number) cardScore = card.number;
+          if (card.type === "DRAW") cardScore = 20;
+          if (card.type === "REVERSE") cardScore = 20;
+          if (card.type === "SKIP") cardScore = 20;
+          if (card.type === "WILD") cardScore = 50;
+          if (card.type === "WILD DRAW") cardScore = 50;
+          return acc + cardScore;
+        }, 0);
+
+        return acc + playerHandScore;
+      }, 0);
+    },
+    onEnd: (callback) => {
+      onEndCallbacks.push(callback);
     },
   };
 }

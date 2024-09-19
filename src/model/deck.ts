@@ -56,9 +56,7 @@ export function createDeck(cards: Card[]): Deck {
     },
     cards,
     shuffle: (shuffler: Shuffler<Card>) => shuffler(cards),
-    deal: () => {
-      return cards.shift();
-    },
+    deal: () => cards.shift(),
     filter: (predicate: (card: Card) => boolean) => {
       return createDeck(cards.filter(predicate));
     },
