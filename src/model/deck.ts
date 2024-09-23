@@ -29,36 +29,53 @@ export type Card = {
 };
 
 export function createInitialDeck(): Deck {
-  let cards: Card[] = [];
+  const cards: Card[] = [];
+
   for (let color of colors) {
+    // 1x 0-numbered cards of each color
     cards.push({ type: "NUMBERED", color, number: 0 });
-    for (let number = 1; number < 10; number++) {
-      cards.push({ type: "NUMBERED", color, number });
-      cards.push({ type: "NUMBERED", color, number });
+
+    // 2x 1-9 numbered cards of each color
+    for (let number = 1; number <= 9; number++) {
+      for (const _ of Array(2)) {
+        cards.push({ type: "NUMBERED", color, number });
+      }
     }
-    for (let type of ["SKIP", "REVERSE", "DRAW"] as const) {
-      cards.push({ type, color });
-      cards.push({ type, color });
+
+    // 2x of each special card of each color
+    for (const type of ["SKIP", "REVERSE", "DRAW"] as const) {
+      for (const _ of Array(2)) {
+        cards.push({ type, color });
+      }
     }
   }
-  for (let type of ["WILD", "WILD DRAW"] as const) {
-    for (let _ of [1, 2, 3, 4]) {
+
+  // 4x of each wild card
+  for (const type of ["WILD", "WILD DRAW"] as const) {
+    for (const _ of Array(4)) {
       cards.push({ type });
     }
   }
+
   return createDeck(cards);
 }
 
 export function createDeck(cards: Card[]): Deck {
+  const shuffle: Deck["shuffle"] = (shuffler) => shuffler(cards);
+
+  const deal: Deck["deal"] = () => cards.shift();
+
+  const filter: Deck["filter"] = (predicate) => {
+    return createDeck(cards.filter(predicate));
+  };
+
   return {
+    cards,
+    shuffle,
+    deal,
+    filter,
     get size() {
       return cards.length;
-    },
-    cards,
-    shuffle: (shuffler: Shuffler<Card>) => shuffler(cards),
-    deal: () => cards.shift(),
-    filter: (predicate: (card: Card) => boolean) => {
-      return createDeck(cards.filter(predicate));
     },
   };
 }

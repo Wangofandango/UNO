@@ -5,6 +5,6 @@
 - [X] deck
 - [X] hand.start
 - [X] hand.legal.plays
-- [?] hand.playing
-- [?] hand.going.out
+- [?] hand.playing (1 failed, unknown)
+- [?] hand.going.out (3 failed, unknown)
 - [X] uno
