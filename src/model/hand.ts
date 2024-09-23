@@ -67,25 +67,36 @@ export function createHand(params: HandParams): Hand {
     throw new Error("At most 10 players are allowed");
   }
 
+  const playerCount = params.players.length;
   const playerHands: Card[][] = [];
+
+  let direction = 1;
+
+  let canAccuseUnoFailure = true;
   const unoCalls: boolean[] = new Array(params.players.length).fill(false);
+
   const onEndCallbacks: Parameters<Hand["onEnd"]>[0][] = [];
 
   let deck = createInitialDeck();
   deck.shuffle(params.shuffler);
 
   const drawCards = (playerIndex: number, amount: number) => {
+    if (deck.size === 0) {
+      deck = createDeck(discardedPile.cards.slice(0, -1));
+      deck.shuffle(params.shuffler);
+
+      discardedPile.cards = [discardedPile.top()];
+    }
+
+    const playerHand = playerHands[playerIndex];
+
     for (let i = 0; i < amount; i++) {
-      const playerHand = playerHands[playerIndex];
       const newCard = deck.deal();
       playerHand.push(newCard as Card);
+    }
 
-      if (deck.size === 0) {
-        deck = createDeck(discardedPile.cards.slice(0, -1));
-        deck.shuffle(params.shuffler);
-
-        discardedPile.cards = [discardedPile.top()];
-      }
+    if (playerHand.length > 1) {
+      unoCalls[playerIndex] = false;
     }
   };
 
@@ -107,19 +118,31 @@ export function createHand(params: HandParams): Hand {
     top: () => discardedPile.cards[0],
   };
 
-  const indexModifier =
-    discardedPile.top().type === "SKIP"
-      ? 2
-      : discardedPile.top().type === "REVERSE"
-      ? -1
-      : 1;
+  const getNextPlayerIndex = (params?: { skip?: boolean }) => {
+    const modifier = params?.skip ? direction * 2 : direction;
+    return (currentPlayer + modifier + playerCount) % playerCount;
+  };
 
-  let currentPlayer = (params.dealer + indexModifier) % params.players.length;
-  currentPlayer = currentPlayer < 0 ? params.players.length - 1 : currentPlayer;
+  const advanceTurn = (params?: { skip?: boolean }) => {
+    currentPlayer = getNextPlayerIndex(params);
+    canAccuseUnoFailure = true;
+  };
+
+  let indexModifier = 1;
+
+  if (discardedPile.top().type === "REVERSE") {
+    indexModifier = -1;
+  } else if (discardedPile.top().type === "SKIP") {
+    indexModifier = 2;
+  }
+
+  let currentPlayer =
+    (params.dealer + indexModifier + params.players.length) %
+    params.players.length;
 
   if (discardedPile.top().type === "DRAW") {
     drawCards(currentPlayer, 2);
-    currentPlayer = (currentPlayer + 1) % params.players.length;
+    advanceTurn();
   }
 
   const hasEnded = () => {
@@ -177,7 +200,19 @@ export function createHand(params: HandParams): Hand {
       if (hasEnded()) {
         throw new Error("Game has ended");
       }
+
       drawCards(currentPlayer, 1);
+
+      if (!canPlayAny()) {
+        advanceTurn();
+      }
+
+      canAccuseUnoFailure = false;
+      params.players.forEach((_, index) => {
+        if (index !== currentPlayer) {
+          unoCalls[index] = playerHands[index].length === 1;
+        }
+      });
     },
     play: (cardIndex: number, color?: Color) => {
       if (hasEnded()) {
@@ -191,47 +226,57 @@ export function createHand(params: HandParams): Hand {
         throw new Error("Card not found");
       }
 
+      if (card.color && color) {
+        throw new Error("Cannot set colour of a non-WILD card");
+      }
+
       if (!canPlay(cardIndex)) {
-        return;
+        throw new Error("Cannot play this card");
+      }
+
+      if (card.type === "WILD" || card.type === "WILD DRAW") {
+        if (!color) {
+          throw new Error("Color is required for WILD cards");
+        }
       }
 
       playerHand.splice(cardIndex, 1);
       discardedPile.cards.unshift(card);
 
       if (card.type === "WILD" || card.type === "WILD DRAW") {
-        if (!color) {
-          throw new Error("Color is required for WILD cards");
-        }
-
         discardedPile.cards[0].color = color;
       }
 
+      canAccuseUnoFailure = false;
+      params.players.forEach((_, index) => {
+        if (index !== currentPlayer) {
+          unoCalls[index] = playerHands[index].length === 1;
+        }
+      });
+
       if (card.type === "REVERSE") {
-        params.players.reverse();
-      } else if (card.type === "SKIP") {
-        currentPlayer = (currentPlayer + 1) % params.players.length;
+        direction *= -1;
       } else if (card.type === "DRAW") {
-        const nextPlayer = (currentPlayer + 1) % params.players.length;
-        drawCards(nextPlayer, 2);
+        drawCards(getNextPlayerIndex(), 2);
       } else if (card.type === "WILD DRAW") {
-        const nextPlayer = (currentPlayer + 1) % params.players.length;
-        drawCards(nextPlayer, 4);
+        drawCards(getNextPlayerIndex(), 4);
       }
 
       if (playerHand.length === 0) {
         onEndCallbacks.forEach((callback) => {
           callback({ winner: currentPlayer });
         });
-        return;
+        return card;
       }
 
-      currentPlayer = (currentPlayer + 1) % params.players.length;
+      advanceTurn({
+        skip:
+          card.type === "SKIP" ||
+          card.type === "DRAW" ||
+          card.type === "WILD DRAW",
+      });
 
-      if (!canPlayAny()) {
-        drawCards(currentPlayer, 1);
-      }
-
-      return;
+      return card;
     },
     sayUno: (playerIndex: number) => {
       if (hasEnded()) {
@@ -242,20 +287,19 @@ export function createHand(params: HandParams): Hand {
         throw new Error("Player index out of bounds");
       }
 
-      const playerCardCount = playerHands[playerIndex].length;
-
-      if (playerCardCount === 1) {
-        unoCalls[playerIndex] = true;
+      if (playerHands[playerIndex].length > 2) {
+        return;
       }
+
+      unoCalls[playerIndex] = true;
     },
     catchUnoFailure: ({ accuser, accused }) => {
-      console.log(
-        `Player ${accuser + 1} accuses Player ${accused + 1} of not saying UNO!`
-      );
-
+      console.log("CALLS: ", unoCalls);
+      console.log("CAN ACCUSE: ", canAccuseUnoFailure);
       const isUnoFailure =
-        (!unoCalls[accused] && playerHands[accused].length <= 1) ||
-        (unoCalls[accused] && playerHands[accused].length > 1);
+        canAccuseUnoFailure &&
+        !unoCalls[accused] &&
+        playerHands[accused].length === 1;
 
       if (isUnoFailure) {
         drawCards(accused, 4);

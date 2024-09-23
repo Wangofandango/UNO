@@ -46,18 +46,22 @@ describe('catching failure to say "UNO!"', () => {
         shuffler,
         cardsPerPlayer: 2,
       });
+      console.log("BEFORE PLAYER HAND 0", hand.playerHand(0));
+      console.log("BEFORE PLAYER HAND 1", hand.playerHand(1));
       hand.draw();
       hand.play(hand.playerHand(0).length - 1);
       hand.draw();
       hand.draw();
       hand.draw();
+      console.log("AFTER PLAYER HAND 0", hand.playerHand(0));
+      console.log("AFTER PLAYER HAND 1", hand.playerHand(1));
     });
     test("set up is as expected", () => {
+      expect(hand.playerInTurn()).toEqual(0);
       expect(hand.playerHand(0).length).toEqual(2);
       expect(hand.playerHand(1).length).toEqual(3);
       expect(hand.playerHand(2).length).toEqual(3);
       expect(hand.playerHand(3).length).toEqual(3);
-      expect(hand.playerInTurn()).toEqual(0);
       expect(hand.canPlay(0)).toBeTruthy();
     });
     it("fails if the player hasn't played penultimate card", () => {
