@@ -36,7 +36,7 @@ export const createGame = ({
     throw new Error("Target score must be greater than 0");
   }
 
-  let _winner: number | undefined = undefined;
+  let winnerInternal: number | undefined = undefined;
 
   const scores = players.map(() => 0);
 
@@ -53,7 +53,7 @@ export const createGame = ({
     hand.onEnd(({ winner }) => {
       scores[winner] += hand!.score() || 0;
       if (scores[winner] >= targetScore) {
-        _winner = winner;
+        winnerInternal = winner;
         hand = undefined;
       } else {
         startNewHand();
@@ -72,7 +72,7 @@ export const createGame = ({
 
   const currentHand = () => hand;
   const score = (playerIndex: number) => scores[playerIndex];
-  const winner = () => _winner;
+  const winner = () => winnerInternal;
 
   return {
     playerCount: players.length,

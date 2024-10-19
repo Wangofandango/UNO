@@ -124,13 +124,18 @@ describe('catching failure to say "UNO!"', () => {
         shuffler,
         cardsPerPlayer: 2,
       });
-      hand.draw();
-      hand.play(hand.playerHand(0).length - 1);
-      hand.draw();
-      hand.draw();
-      hand.sayUno(0); // player 3 is in turn
-      hand.draw();
-      hand.play(0);
+      expect(hand.playerInTurn()).toEqual(0);
+      hand.draw(); // player 0
+      hand.play(hand.playerHand(0).length - 1); // player 0
+      expect(hand.playerInTurn()).toEqual(1);
+      hand.draw(); // player 1
+      expect(hand.playerInTurn()).toEqual(2);
+      hand.draw(); // player 2
+      expect(hand.playerInTurn()).toEqual(3);
+      hand.sayUno(0); // player 0
+      hand.draw(); // player 3
+      expect(hand.playerInTurn()).toEqual(0);
+      hand.play(0); // player 0
       expect(hand.catchUnoFailure({ accuser: 1, accused: 0 })).toBeTruthy();
     });
   });
@@ -153,12 +158,40 @@ describe('catching failure to say "UNO!"', () => {
         shuffler,
         cardsPerPlayer: 2,
       });
+
+      console.log({
+        drawPile: hand.drawPile().cards,
+        discardPile: hand.discardPile().cards,
+        playerHand0: hand.playerHand(0),
+        playerHand1: hand.playerHand(1),
+        playerHand2: hand.playerHand(2),
+        playerHand3: hand.playerHand(3),
+      });
+
+      // player 0 - blue 0
       hand.draw();
+      // player 0 - blue 0
       hand.play(hand.playerHand(0).length - 1);
+
+      // player 1 - red 2
       hand.draw();
+
+      // player 2 - red 3
       hand.draw();
+
+      // player 3
       hand.sayUno(3);
+      // player 3 - blue 4
       hand.play(0);
+
+      console.log({
+        drawPile: hand.drawPile().cards,
+        discardPile: hand.discardPile().cards,
+        playerHand0: hand.playerHand(0),
+        playerHand1: hand.playerHand(1),
+        playerHand2: hand.playerHand(2),
+        playerHand3: hand.playerHand(3),
+      });
     });
     test("set up is as expected", () => {
       expect(hand.playerHand(0).length).toEqual(2);

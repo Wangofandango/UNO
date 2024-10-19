@@ -58,8 +58,8 @@ export function createHand({
   const playerHands: Card[][] = [];
 
   let direction = 1;
-
-  let canAccuseUnoFailure = true;
+  let previousPlayer: number | null = null;
+  let isAccusationWindowOpen = false;
   const unoCalls: boolean[] = new Array(players.length).fill(false);
 
   const onEndCallbacks: Parameters<Hand["onEnd"]>[0][] = [];
@@ -68,23 +68,20 @@ export function createHand({
   deck.shuffle(shuffler);
 
   const drawCards = (playerIndex: number, amount: number) => {
-    if (deck.size === 0) {
-      deck = createDeck(discardedPile.cards.slice(0, -1));
-      deck.shuffle(shuffler);
-
-      discardedPile.cards = [discardedPile.top()];
-    }
-
     const playerHand = playerHands[playerIndex];
 
     for (let i = 0; i < amount; i++) {
       const newCard = deck.deal();
       playerHand.push(newCard as Card);
+
+      if (deck.size === 0) {
+        deck = createDeck(discardedPile.cards.slice(1));
+        deck.shuffle(shuffler);
+        discardedPile.cards = [discardedPile.top()];
+      }
     }
 
-    if (playerHand.length > 1) {
-      unoCalls[playerIndex] = false;
-    }
+    unoCalls[playerIndex] = false;
   };
 
   // Deal cards to players
@@ -101,9 +98,11 @@ export function createHand({
   }
 
   const discardedPile: DiscardPile = {
-    size: 1,
     cards: [deck.deal() as Card],
     top: () => discardedPile.cards[0],
+    get size() {
+      return this.cards.length;
+    },
   };
 
   const getNextPlayerIndex = (params?: { skip?: boolean }) => {
@@ -112,8 +111,15 @@ export function createHand({
   };
 
   const advanceTurn = (params?: { skip?: boolean }) => {
+    // reset uno calls
+    for (let i = 0; i < players.length; i++) {
+      if (i === currentPlayer) continue;
+      unoCalls[i] = false;
+    }
+
+    previousPlayer = currentPlayer;
+    isAccusationWindowOpen = true;
     currentPlayer = getNextPlayerIndex(params);
-    canAccuseUnoFailure = true;
   };
 
   if (discardedPile.top().type === "REVERSE") {
@@ -159,13 +165,6 @@ export function createHand({
     if (!canPlayAny()) {
       advanceTurn();
     }
-
-    canAccuseUnoFailure = false;
-    players.forEach((_, index) => {
-      if (index !== currentPlayer) {
-        unoCalls[index] = playerHands[index].length === 1;
-      }
-    });
   };
 
   const hasEnded: Hand["hasEnded"] = () => {
@@ -207,10 +206,14 @@ export function createHand({
     accuser: _,
     accused,
   }) => {
+    if (accused < 0 || accused >= players.length) {
+      throw new Error("Player index out of bounds");
+    }
+
+    if (!isAccusationWindowOpen || accused !== previousPlayer) return false;
+
     const isUnoFailure =
-      canAccuseUnoFailure &&
-      !unoCalls[accused] &&
-      playerHands[accused].length === 1;
+      playerHands[accused].length === 1 && !unoCalls[accused];
 
     if (isUnoFailure) {
       drawCards(accused, 4);
@@ -270,13 +273,6 @@ export function createHand({
       discardedPile.cards[0].color = color;
     }
 
-    canAccuseUnoFailure = false;
-    players.forEach((_, index) => {
-      if (index !== currentPlayer) {
-        unoCalls[index] = playerHands[index].length === 1;
-      }
-    });
-
     if (card.type === "REVERSE") {
       direction *= -1;
     } else if (card.type === "DRAW") {
@@ -296,7 +292,9 @@ export function createHand({
       skip:
         card.type === "SKIP" ||
         card.type === "DRAW" ||
-        card.type === "WILD DRAW",
+        card.type === "WILD DRAW" ||
+        // Reverse skips in 2-player games
+        (card.type === "REVERSE" && players.length === 2),
     });
 
     return card;
@@ -350,7 +348,7 @@ export const getCardsScore = (cards: Card[]) => {
 };
 
 export const getCardScore = (card: Card) => {
-  if (card.number) return card.number;
+  if (card.number !== undefined) return card.number;
   if (card.type === "WILD" || card.type === "WILD DRAW") return 50;
   return 20;
 };
